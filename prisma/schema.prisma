@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  roleId              String
+  role                Role                 @relation(fields: [roleId], references: [id])
+  name                String
+  email               String               @unique
+  phone               String?
+  passwordHash        String
+  avatarUrl           String?
+  isActive            Boolean              @default(true)
+  lastLoginAt         DateTime?
+  applicationsCreated Application[]        @relation("CreatedApplications")
+  applicationsAssigned Application[]       @relation("AssignedApplications")
+  documentsUploaded   ApplicationDocument[]
+  transactionsReceived PaymentTransaction[]
+  deliveriesHandled   Delivery[]
+  expensesCreated     Expense[]
+  auditLogs           AuditLog[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+}
+
+model Customer {
+  id           String        @id @default(uuid())
+  customerCode String        @unique
+  nameBn       String
+  nameEn       String
+  phone        String        @unique
+  email        String?
+  nid          String?
+  dateOfBirth  String?
+  address      String?
+  village      String?
+  ward         String?
+  unionName    String?
+  upazila      String?
+  district     String?
+  applications Application[]
+  notifications Notification[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Service {
+  id           String        @id @default(uuid())
+  code         String        @unique
+  nameBn       String
+  nameEn       String
+  prefix       String        @unique
+  baseFee      Float
+  description  String?
+  isActive     Boolean       @default(true)
+  applications Application[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Application {
+  id              String                    @id @default(uuid())
+  trackingNo      String                    @unique
+  applicationNo   String                    @unique
+  customerId      String
+  customer        Customer                  @relation(fields: [customerId], references: [id])
+  serviceId       String
+  service         Service                   @relation(fields: [serviceId], references: [id])
+  createdBy       String
+  creator         User                      @relation("CreatedApplications", fields: [createdBy], references: [id])
+  assignedTo      String?
+  assignee        User?                     @relation("AssignedApplications", fields: [assignedTo], references: [id])
+  applicationDate DateTime                  @default(now())
+  status          String                    @default("SUBMITTED") // DRAFT, SUBMITTED, UNDER_REVIEW, PROCESSING, READY_FOR_DELIVERY, DELIVERED, REJECTED
+  priority        String                    @default("NORMAL")
+  totalFee        Float
+  totalPaid       Float                     @default(0)
+  totalDue        Float
+  notes           String?
+  birthDetails    BirthRegistrationDetails?
+  documents       ApplicationDocument[]
+  payments        Payment[]
+  delivery        Delivery?
+  notifications   Notification[]
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+}
+
+model BirthRegistrationDetails {
+  id                String      @id @default(uuid())
+  applicationId     String      @unique
+  application       Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  nameBn            String
+  nameEn            String
+  dateOfBirth       String
+  gender            String
+  birthPlace        String
+  fatherNameBn      String
+  fatherNameEn      String
+  fatherNid         String
+  motherNameBn      String
+  motherNameEn      String
+  motherNid         String
+  nationality       String      @default("Bangladeshi")
+  presentAddress    String?
+  permanentAddress  String?
+  applicantName     String
+  applicantPhone    String
+  applicantRelation String
+  registrationNo    String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+model ApplicationDocument {
+  id            String      @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  documentType  String
+  fileName      String
+  fileKey       String
+  mimeType      String
+  fileSize      Int
+  uploadedBy    String
+  uploader      User        @relation(fields: [uploadedBy], references: [id])
+  createdAt     DateTime    @default(now())
+}
+
+model Payment {
+  id            String               @id @default(uuid())
+  applicationId String
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  totalAmount   Float
+  paidAmount    Float                @default(0)
+  dueAmount     Float
+  status        String               @default("UNPAID") // UNPAID, PARTIAL, PAID, REFUNDED
+  transactions  PaymentTransaction[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+model PaymentTransaction {
+  id                   String   @id @default(uuid())
+  paymentId            String
+  payment              Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  receiptNo            String   @unique
+  amount               Float
+  method               String   @default("CASH") // CASH, BKASH, NAGAD, BANK, OTHER
+  transactionReference String?
+  receivedBy           String
+  receiver             User     @relation(fields: [receivedBy], references: [id])
+  paidAt               DateTime @default(now())
+  note                 String?
+}
+
+model Delivery {
+  id             String      @id @default(uuid())
+  applicationId  String      @unique
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  deliveryStatus String      @default("NOT_READY") // NOT_READY, READY, DELIVERED, CANCELLED
+  deliveredTo    String?
+  deliveredBy    String?
+  deliverer      User?       @relation(fields: [deliveredBy], references: [id])
+  deliveryDate   DateTime?
+  receivedNote   String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model Notification {
+  id            String       @id @default(uuid())
+  customerId    String
+  customer      Customer     @relation(fields: [customerId], references: [id])
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id])
+  channel       String       @default("SMS") // SMS, PUSH, EMAIL
+  title         String
+  message       String
+  status        String       @default("SENT")
+  sentAt        DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+}
+
+model Expense {
+  id            String   @id @default(uuid())
+  category      String
+  amount        Float
+  paymentMethod String   @default("CASH")
+  description   String?
+  expenseDate   String
+  createdBy     String
+  creator       User     @relation(fields: [createdBy], references: [id])
+  createdAt     DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  module     String
+  entityType String
+  entityId   String?
+  oldValues  String?
+  newValues  String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+}
+
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
