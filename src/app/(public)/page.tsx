@@ -2,7 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
-import { store } from '@/lib/store';
+import {
+  getRegistrations,
+  addRegistration,
+  updateRegistration,
+  toggleDeliveryStatus,
+  updatePendingMoney,
+  deleteRegistration,
+  getWorkHistoryLogs,
+} from '@/app/actions';
 import { RegistrationRecord, WorkHistoryLog, DashboardStats } from '@/lib/types';
 import {
   FileText,
@@ -81,22 +89,46 @@ export default function HomePage() {
     return `H-${banglaPadded}`;
   };
 
-  const refreshData = () => {
-    const allRegs = store.getRegistrations();
-    setRecords(allRegs);
-    setStats(store.getDashboardStats());
-    setHistoryLogs(store.getWorkHistory());
+  const refreshData = async () => {
+    const regsRes = await getRegistrations();
+    const historyRes = await getWorkHistoryLogs();
 
-    const autoSerial = getNextSerialNo(allRegs);
-    setFormData((prev) => ({
-      ...prev,
-      serialNo: prev.serialNo || autoSerial,
-    }));
+    if (regsRes.success && regsRes.data) {
+      const allRegs = regsRes.data;
+      setRecords(allRegs as any);
 
-    if (searchQuery.trim()) {
-      setSearchResults(store.searchRegistrations(searchQuery));
-    } else {
-      setSearchResults([]);
+      const totalRegistrations = allRegs.length;
+      const totalPendingMoney = allRegs.reduce((acc, curr) => acc + (curr.pendingMoney || 0), 0);
+      const totalDelivered = allRegs.filter((r) => r.isDelivered).length;
+      const totalPendingDelivery = totalRegistrations - totalDelivered;
+      setStats({ totalRegistrations, totalPendingMoney, totalDelivered, totalPendingDelivery });
+
+      const autoSerial = getNextSerialNo(allRegs as any);
+      setFormData((prev) => ({
+        ...prev,
+        serialNo: prev.serialNo || autoSerial,
+      }));
+
+      if (searchQuery.trim()) {
+        const query = searchQuery.trim().toLowerCase();
+        setSearchResults(
+          allRegs.filter((r) =>
+            r.serialNo.toLowerCase().includes(query) ||
+            r.birthRegistrationNo.toLowerCase().includes(query) ||
+            r.applicantName.toLowerCase().includes(query) ||
+            r.fatherName.toLowerCase().includes(query) ||
+            r.motherName.toLowerCase().includes(query) ||
+            r.dateOfBirth.toLowerCase().includes(query) ||
+            r.pendingMoney.toString().includes(query)
+          ) as any
+        );
+      } else {
+        setSearchResults([]);
+      }
+    }
+
+    if (historyRes.success && historyRes.data) {
+      setHistoryLogs(historyRes.data as any);
     }
   };
 
@@ -124,7 +156,7 @@ export default function HomePage() {
     setActiveTab('add-record');
   };
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.birthRegistrationNo || !formData.applicantName) {
       showToast('❌ জন্মনিবন্ধন নাম্বার ও নিবন্ধন কারীর নাম পূরণ করুন!');
@@ -133,7 +165,7 @@ export default function HomePage() {
 
     const autoSerial = formData.serialNo || getNextSerialNo(records);
 
-    store.addRegistration({
+    const res = await addRegistration({
       serialNo: autoSerial,
       birthRegistrationNo: formData.birthRegistrationNo.trim(),
       applicantName: formData.applicantName.trim(),
@@ -144,63 +176,81 @@ export default function HomePage() {
       isDelivered: formData.isDelivered,
     });
 
-    const nextAutoSerial = getNextSerialNo(store.getRegistrations());
-    setFormData({
-      serialNo: nextAutoSerial,
-      birthRegistrationNo: '',
-      applicantName: '',
-      dateOfBirth: '',
-      fatherName: '',
-      motherName: '',
-      pendingMoney: '0',
-      isDelivered: false,
-    });
+    if (res.success) {
+      setFormData({
+        serialNo: getNextSerialNo([...records, res.data as any]),
+        birthRegistrationNo: '',
+        applicantName: '',
+        dateOfBirth: '',
+        fatherName: '',
+        motherName: '',
+        pendingMoney: '0',
+        isDelivered: false,
+      });
 
-    refreshData();
-    showToast('✅ নতুন নিবন্ধন সফলভাবে যোগ করা হয়েছে!');
-    setActiveTab('all-records');
+      refreshData();
+      showToast('✅ নতুন নিবন্ধন সফলভাবে যোগ করা হয়েছে!');
+      setActiveTab('all-records');
+    } else {
+      showToast('❌ তথ্য যোগ করতে সমস্যা হয়েছে!');
+    }
   };
 
-  const handleToggleDelivery = (id: string, name: string) => {
-    const updated = store.toggleDeliveryStatus(id);
-    refreshData();
-    if (updated) {
+  const handleToggleDelivery = async (id: string, name: string) => {
+    const res = await toggleDeliveryStatus(id);
+    if (res.success && res.data) {
+      refreshData();
       showToast(
-        updated.isDelivered
+        res.data.isDelivered
           ? `✅ ${name} - স্ট্যাটাস: ডেলিভারি ডান!`
           : `⏳ ${name} - স্ট্যাটাস: পেন্ডিং করা হয়েছে!`
       );
     }
   };
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     if (confirm(`আপনি কি নিশ্চিত যে ${name} এর নিবন্ধন তথ্যটি মুছে ফেলতে চান?`)) {
-      store.deleteRegistration(id);
-      refreshData();
-      showToast('🗑️ তথ্য মুছে ফেলা হয়েছে!');
+      const res = await deleteRegistration(id);
+      if (res.success) {
+        refreshData();
+        showToast('🗑️ তথ্য মুছে ফেলা হয়েছে!');
+      }
     }
   };
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
     if (query.trim()) {
-      setSearchResults(store.searchRegistrations(query));
+      const cleanQuery = query.trim().toLowerCase();
+      setSearchResults(
+        records.filter((r) =>
+          r.serialNo.toLowerCase().includes(cleanQuery) ||
+          r.birthRegistrationNo.toLowerCase().includes(cleanQuery) ||
+          r.applicantName.toLowerCase().includes(cleanQuery) ||
+          r.fatherName.toLowerCase().includes(cleanQuery) ||
+          r.motherName.toLowerCase().includes(cleanQuery) ||
+          r.dateOfBirth.toLowerCase().includes(cleanQuery) ||
+          r.pendingMoney.toString().includes(cleanQuery)
+        )
+      );
     } else {
       setSearchResults([]);
     }
   };
 
-  const handleClearMoney = (id: string, name: string) => {
-    store.updatePendingMoney(id, 0);
-    refreshData();
-    showToast(`💰 ${name} এর বকেয়া পরিশোধ সম্পন্ন হয়েছে!`);
+  const handleClearMoney = async (id: string, name: string) => {
+    const res = await updatePendingMoney(id, 0);
+    if (res.success) {
+      refreshData();
+      showToast(`💰 ${name} এর বকেয়া পরিশোধ সম্পন্ন হয়েছে!`);
+    }
   };
 
-  const handleEditSave = (e: React.FormEvent) => {
+  const handleEditSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRecord) return;
 
-    store.updateRegistration(editingRecord.id, {
+    const res = await updateRegistration(editingRecord.id as string, {
       serialNo: editingRecord.serialNo,
       birthRegistrationNo: editingRecord.birthRegistrationNo,
       applicantName: editingRecord.applicantName,
@@ -211,9 +261,13 @@ export default function HomePage() {
       isDelivered: editingRecord.isDelivered,
     });
 
-    setEditingRecord(null);
-    refreshData();
-    showToast('✅ তথ্য সফলভাবে আপডেট করা হয়েছে!');
+    if (res.success) {
+      setEditingRecord(null);
+      refreshData();
+      showToast('✅ তথ্য সফলভাবে আপডেট করা হয়েছে!');
+    } else {
+      showToast('❌ আপডেট করতে সমস্যা হয়েছে!');
+    }
   };
 
   // Reusable exact 2nd Image Card Component Design for Records
