@@ -57,15 +57,46 @@ export default function HomePage() {
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Compute next auto-generated serial number
+  const getNextSerialNo = (currentRecords: RegistrationRecord[]) => {
+    if (!currentRecords || currentRecords.length === 0) return 'H-০০১';
+    const numericSerials = currentRecords
+      .map((r) => {
+        // Extract only digits (English or Bengali)
+        const digits = r.serialNo.replace(/[^\d০-৯]/g, '');
+        // Convert Bengali digits to English digits for parsing
+        const englishDigits = digits.replace(/[০-৯]/g, (d) => '০১২৩৪৫৬৭৮৯'.indexOf(d).toString());
+        return parseInt(englishDigits, 10);
+      })
+      .filter((num) => !isNaN(num));
+
+    let nextNum = 1;
+    if (numericSerials.length > 0) {
+      nextNum = Math.max(...numericSerials) + 1;
+    }
+    
+    const padded = nextNum.toString().padStart(3, '0');
+    const banglaPadded = padded.split('').map(d => ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'][parseInt(d)]).join('');
+    
+    return `H-${banglaPadded}`;
+  };
+
   const refreshData = () => {
     const allRegs = store.getRegistrations();
     setRecords(allRegs);
     setStats(store.getDashboardStats());
     setHistoryLogs(store.getWorkHistory());
+
+    const autoSerial = getNextSerialNo(allRegs);
+    setFormData((prev) => ({
+      ...prev,
+      serialNo: prev.serialNo || autoSerial,
+    }));
+
     if (searchQuery.trim()) {
       setSearchResults(store.searchRegistrations(searchQuery));
     } else {
-      setSearchResults(allRegs);
+      setSearchResults([]);
     }
   };
 
@@ -78,6 +109,21 @@ export default function HomePage() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const handleOpenAddForm = () => {
+    const autoSerial = getNextSerialNo(records);
+    setFormData({
+      serialNo: autoSerial,
+      birthRegistrationNo: '',
+      applicantName: '',
+      dateOfBirth: '',
+      fatherName: '',
+      motherName: '',
+      pendingMoney: '0',
+      isDelivered: false,
+    });
+    setActiveTab('add-record');
+  };
+
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.birthRegistrationNo || !formData.applicantName) {
@@ -85,8 +131,10 @@ export default function HomePage() {
       return;
     }
 
+    const autoSerial = formData.serialNo || getNextSerialNo(records);
+
     store.addRegistration({
-      serialNo: formData.serialNo || `${1000 + records.length + 1}`,
+      serialNo: autoSerial,
       birthRegistrationNo: formData.birthRegistrationNo.trim(),
       applicantName: formData.applicantName.trim(),
       dateOfBirth: formData.dateOfBirth || new Date().toISOString().split('T')[0],
@@ -96,8 +144,9 @@ export default function HomePage() {
       isDelivered: formData.isDelivered,
     });
 
+    const nextAutoSerial = getNextSerialNo(store.getRegistrations());
     setFormData({
-      serialNo: '',
+      serialNo: nextAutoSerial,
       birthRegistrationNo: '',
       applicantName: '',
       dateOfBirth: '',
@@ -137,7 +186,7 @@ export default function HomePage() {
     if (query.trim()) {
       setSearchResults(store.searchRegistrations(query));
     } else {
-      setSearchResults(records);
+      setSearchResults([]);
     }
   };
 
@@ -346,7 +395,7 @@ export default function HomePage() {
           </button>
 
           <button
-            onClick={() => setActiveTab('add-record')}
+            onClick={handleOpenAddForm}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition ${
               activeTab === 'add-record'
                 ? 'bg-emerald-600 text-white shadow'
@@ -410,7 +459,7 @@ export default function HomePage() {
               </div>
 
               <button
-                onClick={() => setActiveTab('add-record')}
+                onClick={handleOpenAddForm}
                 className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl font-bold text-xs shadow flex items-center gap-1.5"
               >
                 <PlusCircle className="w-4 h-4" />
@@ -430,21 +479,28 @@ export default function HomePage() {
         {/* TAB 2: ADD REGISTRATION */}
         {activeTab === 'add-record' && (
           <div className="max-w-2xl mx-auto bg-white rounded-3xl border border-slate-200 shadow-lg p-6 md:p-8 space-y-6">
-            <div className="border-b border-slate-100 pb-3">
-              <h2 className="text-xl font-bold text-slate-900">নতুন নিবন্ধন যোগ করুন</h2>
-              <p className="text-xs text-slate-500">ফরমের সকল তথ্য ইনপুট করে সংরক্ষণ করুন</p>
+            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">নতুন নিবন্ধন যোগ করুন</h2>
+                <p className="text-xs text-slate-500">সিরিয়াল নাম্বারটি সংক্রিয়ভাবে জেনারেট হয়েছে</p>
+              </div>
+              <span className="bg-emerald-100 text-emerald-900 px-3 py-1 rounded-full text-xs font-mono font-bold">
+                সিরিয়াল: #{formData.serialNo}
+              </span>
             </div>
 
             <form onSubmit={handleAddSubmit} className="space-y-4 text-xs md:text-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">১. সিরিয়াল নাম্বার</label>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    ১. সিরিয়াল নাম্বার (অটোমেটিক)
+                  </label>
                   <input
                     type="text"
-                    placeholder="যেমন: 1006"
+                    required
                     value={formData.serialNo}
                     onChange={(e) => setFormData({ ...formData, serialNo: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 font-mono font-bold text-emerald-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
 
@@ -563,32 +619,55 @@ export default function HomePage() {
                 জন্মনিবন্ধন নাম্বার, নাম, বাবার নাম, মাতার নাম বা সিরিয়াল নাম্বার টাইপ করুন
               </p>
 
-              <div className="relative max-w-xl">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="যে কোনো তথ্য টাইপ করে সার্চ করুন..."
-                  value={searchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm font-medium"
-                />
+              <div className="flex flex-col md:flex-row gap-3 max-w-2xl">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="যে কোনো তথ্য টাইপ করে সার্চ করুন..."
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm font-medium"
+                  />
+                </div>
+                <button
+                  onClick={() => handleSearchChange(searchQuery)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow flex items-center justify-center gap-2 transition"
+                >
+                  <Search className="w-4 h-4" />
+                  অনুসন্ধান করুন
+                </button>
               </div>
             </div>
 
             <div className="space-y-4">
-              <p className="text-xs font-bold text-slate-600">
-                অনুসন্ধানের ফলাফল: {searchResults.length} টি পাওয়া গেছে
-              </p>
+              {searchQuery.trim() === '' ? (
+                <div className="bg-white p-8 rounded-2xl text-center text-slate-500 font-bold text-sm border border-slate-200">
+                  👆 উপরে আপনার প্রয়োজনীয় তথ্য টাইপ করে অনুসন্ধান করুন
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs font-bold text-slate-600">
+                    অনুসন্ধানের ফলাফল: {searchResults.length} টি পাওয়া গেছে
+                  </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {searchResults.map((item) => (
                   <RecordCard key={item.id} item={item} />
                 ))}
+                {searchResults.length === 0 && (
+                  <div className="col-span-1 md:col-span-2 text-center text-rose-500 font-bold py-8 border border-rose-200 bg-rose-50 rounded-2xl">
+                    কোনো ফলাফল পাওয়া যায়নি!
+                  </div>
+                )}
               </div>
+              </>
+            )}
             </div>
           </div>
         )}
+
 
         {/* TAB 4: PENDING MONEY */}
         {activeTab === 'pending-money' && (
