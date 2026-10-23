@@ -185,3 +185,104 @@ export async function getWorkHistoryLogs() {
     return { success: false, data: [] };
   }
 }
+
+export async function deleteWorkHistory(id: string) {
+  try {
+    await prisma.workHistory.delete({
+      where: { id },
+    });
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to delete work history item:', error);
+    return { success: false, error: 'হিস্ট্রি রেকর্ড মুছতে ব্যর্থ হয়েছে।' };
+  }
+}
+
+export async function deleteMultipleWorkHistory(ids: string[]) {
+  try {
+    if (!ids || ids.length === 0) return { success: false, error: 'কোনো হিস্ট্রি নির্বাচন করা হয়নি।' };
+    await prisma.workHistory.deleteMany({
+      where: {
+        id: { in: ids },
+      },
+    });
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to delete multiple work history:', error);
+    return { success: false, error: 'নির্বাচিত হিস্ট্রি রেকর্ডগুলো মুছতে ব্যর্থ হয়েছে।' };
+  }
+}
+
+export async function clearAllWorkHistory() {
+  try {
+    await prisma.workHistory.deleteMany({});
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to clear work history:', error);
+    return { success: false, error: 'সমস্ত হিস্ট্রি মুছতে ব্যর্থ হয়েছে।' };
+  }
+}
+
+export async function recordVisitor(visitorId: string, userAgent?: string) {
+  try {
+    if (visitorId) {
+      await prisma.visitorLog.create({
+        data: {
+          visitorId,
+          userAgent: userAgent || '',
+          path: '/',
+        },
+      });
+    }
+
+    return await getVisitorStats();
+  } catch (error) {
+    console.error('Failed to record visitor:', error);
+    return { success: false, data: { totalVisits: 0, uniqueVisitors: 0, todayVisits: 0 } };
+  }
+}
+
+export async function getVisitorStats() {
+  try {
+    const totalVisits = await prisma.visitorLog.count();
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const todayVisits = await prisma.visitorLog.count({
+      where: {
+        timestamp: {
+          gte: startOfToday,
+        },
+      },
+    });
+
+    const uniqueVisitorRecords = await prisma.visitorLog.findMany({
+      select: { visitorId: true },
+      distinct: ['visitorId'],
+    });
+
+    return {
+      success: true,
+      data: {
+        totalVisits,
+        uniqueVisitors: uniqueVisitorRecords.length,
+        todayVisits,
+      },
+    };
+  } catch (error) {
+    console.error('Failed to get visitor stats:', error);
+    return {
+      success: false,
+      data: {
+        totalVisits: 0,
+        uniqueVisitors: 0,
+        todayVisits: 0,
+      },
+    };
+  }
+}
+

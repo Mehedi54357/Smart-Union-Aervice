@@ -31,3 +31,10 @@ export interface DashboardStats {
   totalDelivered: number;
   totalPendingDelivery: number;
 }
+
+export interface VisitorStats {
+  totalVisits: number;
+  uniqueVisitors: number;
+  todayVisits: number;
+}
+

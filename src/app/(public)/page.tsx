@@ -10,8 +10,13 @@ import {
   updatePendingMoney,
   deleteRegistration,
   getWorkHistoryLogs,
+  deleteWorkHistory,
+  deleteMultipleWorkHistory,
+  clearAllWorkHistory,
+  recordVisitor,
+  getVisitorStats,
 } from '@/app/actions';
-import { RegistrationRecord, WorkHistoryLog, DashboardStats } from '@/lib/types';
+import { RegistrationRecord, WorkHistoryLog, DashboardStats, VisitorStats } from '@/lib/types';
 import {
   FileText,
   UserPlus,
@@ -26,7 +31,13 @@ import {
   Calendar,
   X,
   Plus,
-  Coins
+  Coins,
+  Check,
+  CheckSquare,
+  AlertTriangle,
+  Loader2,
+  Eye,
+  Users,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -42,6 +53,22 @@ export default function HomePage() {
     totalPendingDelivery: 0,
   });
   const [historyLogs, setHistoryLogs] = useState<WorkHistoryLog[]>([]);
+
+  // Visitor Tracking State
+  const [visitorStats, setVisitorStats] = useState<VisitorStats | null>(null);
+
+  // History Management & Batch Delete States
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historyFilterType, setHistoryFilterType] = useState<string>('ALL');
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'single' | 'multiple' | 'all';
+    targetId?: string;
+    targetTitle?: string;
+    count?: number;
+  } | null>(null);
+  const [isDeletingHistory, setIsDeletingHistory] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,6 +91,7 @@ export default function HomePage() {
 
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
 
   // Compute next auto-generated serial number
   const getNextSerialNo = (currentRecords: RegistrationRecord[]) => {
@@ -134,12 +162,117 @@ export default function HomePage() {
 
   useEffect(() => {
     refreshData();
+
+    // Visitor Tracking
+    const trackVisitorActivity = async () => {
+      try {
+        let visitorId = localStorage.getItem('munsur_visitor_id');
+        if (!visitorId) {
+          visitorId = 'vis_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+          localStorage.setItem('munsur_visitor_id', visitorId);
+        }
+        const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+        const res = await recordVisitor(visitorId, userAgent);
+        if (res.success && res.data) {
+          setVisitorStats(res.data);
+        }
+      } catch (err) {
+        console.error('Failed to track visitor:', err);
+      }
+    };
+
+    trackVisitorActivity();
   }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3500);
   };
+
+  // History Helper Handlers
+  const toggleSelectHistory = (id: string) => {
+    setSelectedHistoryIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllVisibleHistory = () => {
+    if (selectedHistoryIds.length === filteredHistoryLogs.length && filteredHistoryLogs.length > 0) {
+      setSelectedHistoryIds([]);
+    } else {
+      setSelectedHistoryIds(filteredHistoryLogs.map((l) => l.id));
+    }
+  };
+
+  const handleOpenSingleDelete = (id: string, title: string) => {
+    setDeleteConfirmModal({
+      isOpen: true,
+      type: 'single',
+      targetId: id,
+      targetTitle: title,
+    });
+  };
+
+  const handleOpenMultipleDelete = () => {
+    if (selectedHistoryIds.length === 0) return;
+    setDeleteConfirmModal({
+      isOpen: true,
+      type: 'multiple',
+      count: selectedHistoryIds.length,
+    });
+  };
+
+  const handleOpenClearAll = () => {
+    if (historyLogs.length === 0) return;
+    setDeleteConfirmModal({
+      isOpen: true,
+      type: 'all',
+      count: historyLogs.length,
+    });
+  };
+
+  const handleExecuteDeleteHistory = async () => {
+    if (!deleteConfirmModal) return;
+    setIsDeletingHistory(true);
+    try {
+      if (deleteConfirmModal.type === 'single' && deleteConfirmModal.targetId) {
+        const res = await deleteWorkHistory(deleteConfirmModal.targetId);
+        if (res.success) {
+          setHistoryLogs((prev) => prev.filter((l) => l.id !== deleteConfirmModal.targetId));
+          setSelectedHistoryIds((prev) => prev.filter((id) => id !== deleteConfirmModal.targetId));
+          showToast('হিস্ট্রি রেকর্ড সফলভাবে মুছে ফেলা হয়েছে! 🗑️');
+        } else {
+          showToast(res.error || 'হিস্ট্রি মুছতে ব্যর্থ হয়েছে');
+        }
+      } else if (deleteConfirmModal.type === 'multiple') {
+        const res = await deleteMultipleWorkHistory(selectedHistoryIds);
+        if (res.success) {
+          const deletedSet = new Set(selectedHistoryIds);
+          setHistoryLogs((prev) => prev.filter((l) => !deletedSet.has(l.id)));
+          setSelectedHistoryIds([]);
+          showToast(`${deleteConfirmModal.count}টি হিস্ট্রি রেকর্ড মুছে ফেলা হয়েছে! 🗑️`);
+        } else {
+          showToast(res.error || 'হিস্ট্রি মুছতে ব্যর্থ হয়েছে');
+        }
+      } else if (deleteConfirmModal.type === 'all') {
+        const res = await clearAllWorkHistory();
+        if (res.success) {
+          setHistoryLogs([]);
+          setSelectedHistoryIds([]);
+          showToast('সমস্ত কাজের হিস্ট্রি সফলভাবে মুছে ফেলা হয়েছে! 🧹');
+        } else {
+          showToast(res.error || 'হিস্ট্রি মুছতে ব্যর্থ হয়েছে');
+        }
+      }
+    } catch (err) {
+      console.error('Delete history error:', err);
+      showToast('অপ্রত্যাশিত সমস্যা হয়েছে। আবার চেষ্টা করুন।');
+    } finally {
+      setIsDeletingHistory(false);
+      setDeleteConfirmModal(null);
+    }
+  };
+
 
   const handleOpenAddForm = () => {
     const autoSerial = getNextSerialNo(records);
@@ -352,78 +485,138 @@ export default function HomePage() {
     </div>
   );
 
-  // Work History Card Component matching 2nd image design format
-  const HistoryCard = ({ log }: { log: WorkHistoryLog }) => (
-    <div className="bg-white rounded-2xl p-5 md:p-6 border border-emerald-400 shadow-sm hover:shadow-md transition-all space-y-4">
-      {/* Top Row: Serial/ID & Action Type Badge */}
-      <div className="flex items-center justify-between">
-        <span className="bg-slate-100 text-slate-800 font-mono font-bold text-xs px-3.5 py-1 rounded-md border border-slate-200">
-          সিরিয়াল: #{log.serialNo || 'লগ'}
-        </span>
+  // Filtered history logs based on search and actionType filter
+  const filteredHistoryLogs = historyLogs.filter((log) => {
+    if (historyFilterType !== 'ALL' && log.actionType !== historyFilterType) {
+      return false;
+    }
+    if (historySearchQuery.trim()) {
+      const q = historySearchQuery.trim().toLowerCase();
+      const titleMatch = log.title?.toLowerCase().includes(q);
+      const descMatch = log.description?.toLowerCase().includes(q);
+      const serialMatch = log.serialNo?.toLowerCase().includes(q);
+      const nameMatch = log.applicantName?.toLowerCase().includes(q);
+      const regMatch = log.birthRegistrationNo?.toLowerCase().includes(q);
+      return Boolean(titleMatch || descMatch || serialMatch || nameMatch || regMatch);
+    }
+    return true;
+  });
 
-        {log.actionType === 'DELIVERY' ? (
-          <span className="bg-emerald-600 text-white text-xs font-bold px-3.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
-            <CheckCircle2 className="w-4 h-4" />
-            ✅  ডেলিভারি ডান
-          </span>
-        ) : log.actionType === 'ADD' ? (
-          <span className="bg-blue-600 text-white text-xs font-bold px-3.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
-            <Plus className="w-4 h-4" />
-            ➕  নিবন্ধন যোগ
-          </span>
-        ) : log.actionType === 'PAYMENT' ? (
-          <span className="bg-amber-500 text-slate-950 text-xs font-bold px-3.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
-            <Coins className="w-4 h-4" />
-            💰  টাকা আপডেট
-          </span>
-        ) : (
-          <span className="bg-slate-700 text-white text-xs font-bold px-3.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
-            <Clock className="w-4 h-4" />
-            আপডেট
-          </span>
-        )}
-      </div>
+  // Work History Card Component with Single & Batch Delete Support
+  const HistoryCard = ({ log }: { log: WorkHistoryLog }) => {
+    const isSelected = selectedHistoryIds.includes(log.id);
 
-      {/* Action Title & Citizen Info */}
-      <div>
-        <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">{log.title}</h3>
-        {log.birthRegistrationNo && (
-          <p className="text-emerald-700 font-bold text-sm font-mono mt-0.5">
-            জন্মনিবন্ধন নং: <span className="tracking-wider">{log.birthRegistrationNo}</span>
+    return (
+      <div
+        className={`rounded-2xl p-5 md:p-6 transition-all duration-200 space-y-4 border relative ${
+          isSelected
+            ? 'bg-emerald-50/80 border-emerald-500 shadow-md ring-2 ring-emerald-400/50'
+            : 'bg-white border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-300'
+        }`}
+      >
+        {/* Top Row: Checkbox, Serial/ID & Action Type Badge & Single Delete Button */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            {/* Checkbox for batch select */}
+            <button
+              type="button"
+              onClick={() => toggleSelectHistory(log.id)}
+              className={`w-5 h-5 rounded-md flex items-center justify-center transition border ${
+                isSelected
+                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                  : 'border-slate-300 bg-white hover:border-emerald-500'
+              }`}
+              title={isSelected ? 'আনসিলেক্ট করুন' : 'সিলেক্ট করুন'}
+            >
+              {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+            </button>
+
+            <span className="bg-slate-100 text-slate-800 font-mono font-bold text-xs px-3 py-1 rounded-md border border-slate-200">
+              সিরিয়াল: #{log.serialNo || 'লগ'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {log.actionType === 'DELIVERY' ? (
+              <span className="bg-emerald-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                ডেলিভারি ডান
+              </span>
+            ) : log.actionType === 'ADD' ? (
+              <span className="bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                <Plus className="w-3.5 h-3.5" />
+                নিবন্ধন যোগ
+              </span>
+            ) : log.actionType === 'PAYMENT' ? (
+              <span className="bg-amber-500 text-slate-950 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                <Coins className="w-3.5 h-3.5" />
+                টাকা আপডেট
+              </span>
+            ) : log.actionType === 'DELETE' ? (
+              <span className="bg-rose-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                <Trash2 className="w-3.5 h-3.5" />
+                মুছে ফেলা
+              </span>
+            ) : (
+              <span className="bg-slate-700 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                <Clock className="w-3.5 h-3.5" />
+                আপডেট
+              </span>
+            )}
+
+            {/* Single Delete Button */}
+            <button
+              onClick={() => handleOpenSingleDelete(log.id, log.title)}
+              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition border border-transparent hover:border-rose-200"
+              title="এই হিস্ট্রি মুছে ফেলুন"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Action Title & Citizen Info */}
+        <div>
+          <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">{log.title}</h3>
+          {log.birthRegistrationNo && (
+            <p className="text-emerald-700 font-bold text-sm font-mono mt-0.5">
+              জন্মনিবন্ধন নং: <span className="tracking-wider">{log.birthRegistrationNo}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Inner Description & Timestamp Box */}
+        <div className="bg-slate-50/80 border border-slate-100 rounded-xl p-4 my-3 text-xs md:text-sm space-y-2">
+          <p className="text-slate-800 font-medium leading-relaxed">
+            <strong className="text-slate-900">বিবরণ:</strong> {log.description}
           </p>
-        )}
-      </div>
+          <p className="text-slate-600 font-mono text-xs flex items-center gap-1.5 pt-1 border-t border-slate-200/60">
+            <Calendar className="w-3.5 h-3.5 text-emerald-700" />
+            <strong className="text-slate-800">সম্পন্ন হওয়ার সময়:</strong>{' '}
+            {new Date(log.timestamp).toLocaleString('bn-BD')}
+          </p>
+        </div>
 
-      {/* Inner Description & Timestamp Box */}
-      <div className="bg-slate-50/80 border border-slate-100 rounded-xl p-4 my-3 text-xs md:text-sm space-y-2">
-        <p className="text-slate-800 font-medium leading-relaxed">
-          <strong className="text-slate-900">বিবরণ:</strong> {log.description}
-        </p>
-        <p className="text-slate-600 font-mono text-xs flex items-center gap-1.5 pt-1 border-t border-slate-200/60">
-          <Calendar className="w-3.5 h-3.5 text-emerald-700" />
-          <strong className="text-slate-800">সম্পন্ন হওয়ার সময়:</strong>{' '}
-          {new Date(log.timestamp).toLocaleString('bn-BD')}
-        </p>
-      </div>
-
-      {/* Bottom Row */}
-      <div className="flex items-center justify-between pt-1 text-xs">
-        <span className="text-slate-500 font-bold">
-          স্ট্যাটাস: <span className="text-emerald-700">সফলভাবে রেকর্ড করা হয়েছে</span>
-        </span>
-        {log.applicantName && (
-          <span className="font-bold text-slate-800">
-            আবেদনকারী: <span className="text-emerald-800">{log.applicantName}</span>
+        {/* Bottom Row */}
+        <div className="flex items-center justify-between pt-1 text-xs">
+          <span className="text-slate-500 font-bold">
+            স্ট্যাটাস: <span className="text-emerald-700">সফলভাবে রেকর্ড করা হয়েছে</span>
           </span>
-        )}
+          {log.applicantName && (
+            <span className="font-bold text-slate-800">
+              আবেদনকারী: <span className="text-emerald-800">{log.applicantName}</span>
+            </span>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
       {/* Official Header */}
-      <Header />
+      <Header visitorStats={visitorStats || undefined} />
+
 
       {/* Toast alert */}
       {toastMessage && (
@@ -762,26 +955,190 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* TAB 5: WORK HISTORY LOG - STYLED IN SAME 2nd IMAGE CARD DESIGN */}
+        {/* TAB 5: WORK HISTORY LOG - WITH SINGLE, MULTIPLE & CLEAR ALL DELETE */}
         {activeTab === 'history' && (
-          <div className="space-y-6">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-extrabold text-slate-900">কাজের হিস্ট্রি (Work History Log)</h2>
-                <p className="text-xs text-slate-500">সম্পন্ন করা সকল কাজের ক্রমানুসারে তালিকা</p>
+          <div className="space-y-5">
+            {/* Control Header Box */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-xl font-extrabold text-slate-900">কাজের হিস্ট্রি (Work History Log)</h2>
+                    <span className="bg-blue-100 text-blue-900 px-3 py-0.5 rounded-full text-xs font-bold font-mono">
+                      মোট: {historyLogs.length} টি
+                    </span>
+                    {filteredHistoryLogs.length !== historyLogs.length && (
+                      <span className="bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+                        ফলাফল: {filteredHistoryLogs.length} টি
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    সিস্টেমের কার্যক্রমের বিবরণ, সিঙ্গেল ও একাধিক হিস্ট্রি ডিলিট সুবিধা
+                  </p>
+                </div>
+
+                {/* Global Action Toolbar */}
+                <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+                  {/* Select All Toggle */}
+                  {filteredHistoryLogs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSelectAllVisibleHistory}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-300 text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 transition shadow-sm"
+                    >
+                      <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                      {selectedHistoryIds.length === filteredHistoryLogs.length && filteredHistoryLogs.length > 0
+                        ? 'সব আনসিলেক্ট করুন'
+                        : 'সব সিলেক্ট করুন'}
+                    </button>
+                  )}
+
+                  {/* Batch Delete Selected */}
+                  {selectedHistoryIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleOpenMultipleDelete}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shadow transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      নির্বাচিত ({selectedHistoryIds.length}) মুছুন
+                    </button>
+                  )}
+
+                  {/* Delete All History Button */}
+                  {historyLogs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleOpenClearAll}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold border border-rose-300 bg-rose-50/60 hover:bg-rose-100 text-rose-700 flex items-center gap-1.5 transition ml-auto md:ml-0"
+                      title="সমস্ত কাজের হিস্ট্রি স্থায়ীভাবে মুছে ফেলুন"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      সব মুছুন (Clear All)
+                    </button>
+                  )}
+                </div>
               </div>
-              <span className="bg-blue-100 text-blue-900 px-3.5 py-1 rounded-full text-xs font-bold">
-                মোট অ্যাক্টিভিটি: {historyLogs.length} টি
-              </span>
+
+              {/* Filter Chips & Search Bar */}
+              <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row gap-3 justify-between items-center">
+                {/* Search input for history */}
+                <div className="relative w-full md:w-80">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="হিস্ট্রি খুঁজুন (নাম, সিরিয়াল, বিবরণ)..."
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                  {historySearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setHistorySearchQuery('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Action Type Filter Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 text-xs">
+                  <span className="text-slate-500 text-[11px] font-bold whitespace-nowrap hidden sm:inline">ফিল্টার:</span>
+                  {[
+                    { id: 'ALL', label: 'সব' },
+                    { id: 'DELIVERY', label: '✅ ডেলিভারি ডান' },
+                    { id: 'ADD', label: '➕ নতুন যোগ' },
+                    { id: 'PAYMENT', label: '💰 টাকা আপডেট' },
+                    { id: 'UPDATE', label: '✏️ তথ্য আপডেট' },
+                    { id: 'DELETE', label: '🗑️ মুছে ফেলা' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setHistoryFilterType(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                        historyFilterType === tab.id
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {historyLogs.map((log) => (
-                <HistoryCard key={log.id} log={log} />
-              ))}
-            </div>
+            {/* Sticky Floating Bar when items are selected */}
+            {selectedHistoryIds.length > 0 && (
+              <div className="bg-emerald-950 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center justify-between gap-4 border border-emerald-700/60 sticky top-16 z-20">
+                <div className="flex items-center gap-3">
+                  <span className="bg-emerald-600 text-white font-mono font-bold text-xs px-2.5 py-1 rounded-lg">
+                    {selectedHistoryIds.length}
+                  </span>
+                  <span className="text-xs md:text-sm font-semibold text-emerald-100">
+                    টি হিস্ট্রি রেকর্ড নির্বাচন করা হয়েছে
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHistoryIds([])}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-emerald-200 hover:text-white hover:bg-emerald-900/60 transition"
+                  >
+                    নির্বাচন বাতিল
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenMultipleDelete}
+                    className="px-4 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shadow transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    নির্বাচিতগুলো মুছুন
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* History Cards Grid or Empty State */}
+            {filteredHistoryLogs.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {filteredHistoryLogs.map((log) => (
+                  <HistoryCard key={log.id} log={log} />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white p-12 rounded-2xl text-center border border-slate-200 space-y-3">
+                <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                  <History className="w-6 h-6" />
+                </div>
+                <p className="text-slate-800 font-bold text-base">কোনো কাজের হিস্ট্রি পাওয়া যায়নি!</p>
+                <p className="text-slate-500 text-xs">
+                  {historySearchQuery || historyFilterType !== 'ALL'
+                    ? 'আপনার অনুসন্ধান বা ফিল্টারের সাথে মিলে এমন কোনো হিস্ট্রি পাওয়া যায়নি।'
+                    : 'সিস্টেমে কোনো নতুন কাজ সম্পন্ন হলে তা স্বয়ংক্রিয়ভাবে এখানে যুক্ত হবে।'}
+                </p>
+                {(historySearchQuery || historyFilterType !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHistorySearchQuery('');
+                      setHistoryFilterType('ALL');
+                    }}
+                    className="px-4 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl hover:bg-emerald-100 border border-emerald-200"
+                  >
+                    সব ফিল্টার রিসেট করুন
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
+
 
       </main>
 
@@ -920,6 +1277,85 @@ export default function HomePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Work History Delete Confirmation Modal */}
+      {deleteConfirmModal && deleteConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0 shadow-inner">
+                <AlertTriangle className="w-6 h-6 stroke-[2.5]" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {deleteConfirmModal.type === 'single'
+                    ? 'হিস্ট্রি রেকর্ড মুছে ফেলা'
+                    : deleteConfirmModal.type === 'multiple'
+                    ? `নির্বাচিত (${deleteConfirmModal.count}) হিস্ট্রি মুছবেন?`
+                    : 'সমস্ত কাজের হিস্ট্রি মুছবেন?'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {deleteConfirmModal.type === 'all'
+                    ? 'চূড়ান্ত সতর্কতা! এটি অপরিবর্তনযোগ্য'
+                    : 'মুছে ফেলার পর তথ্যটি ডেটাবেজ থেকে মুছে যাবে'}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl p-4 text-xs md:text-sm text-slate-700 leading-relaxed border border-slate-100">
+              {deleteConfirmModal.type === 'single' && (
+                <p>
+                  আপনি কি নিশ্চিত যে <strong className="text-slate-900 font-bold">"{deleteConfirmModal.targetTitle}"</strong> এর হিস্ট্রি রেকর্ডটি স্থায়ীভাবে মুছে ফেলতে চান?
+                </p>
+              )}
+              {deleteConfirmModal.type === 'multiple' && (
+                <p>
+                  আপনি কি নিশ্চিত যে আপনি নির্বাচিত <strong className="text-rose-600 font-bold">{deleteConfirmModal.count}টি</strong> কাজের হিস্ট্রি রেকর্ড স্থায়ীভাবে মুছে ফেলতে চান?
+                </p>
+              )}
+              {deleteConfirmModal.type === 'all' && (
+                <div className="space-y-1.5 text-rose-700">
+                  <p className="font-bold flex items-center gap-1.5 text-rose-800">
+                    <Trash2 className="w-4 h-4" /> সতর্কবাণী:
+                  </p>
+                  <p>
+                    সিস্টেমের মোট <strong className="font-black text-rose-900">{deleteConfirmModal.count}টি</strong> সকল হিস্ট্রি রেকর্ড পুরোপুরি মুছে দেওয়া হবে। আপনি কি নিশ্চিতভাবে এটি সম্পন্ন করতে চান?
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isDeletingHistory}
+                onClick={() => setDeleteConfirmModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition"
+              >
+                বাতিল করুন
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingHistory}
+                onClick={handleExecuteDeleteHistory}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md flex items-center gap-2 transition disabled:opacity-50"
+              >
+                {isDeletingHistory ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    মুছে ফেলা হচ্ছে...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    হ্যাঁ, মুছে ফেলুন
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
