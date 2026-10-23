@@ -38,3 +38,14 @@ export interface VisitorStats {
   todayVisits: number;
 }
 
+export interface VisitorLogItem {
+  id: string;
+  visitorId: string;
+  device?: string | null;
+  browser?: string | null;
+  visitType?: string | null;
+  path?: string | null;
+  timestamp: string;
+}
+
+

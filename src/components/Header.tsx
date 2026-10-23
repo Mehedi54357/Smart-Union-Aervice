@@ -4,9 +4,10 @@ import { VisitorStats } from '@/lib/types';
 
 interface HeaderProps {
   visitorStats?: VisitorStats;
+  onOpenVisitorLogs?: () => void;
 }
 
-export default function Header({ visitorStats }: HeaderProps) {
+export default function Header({ visitorStats, onOpenVisitorLogs }: HeaderProps) {
   return (
     <header className="bg-emerald-950 text-white border-b border-emerald-800 shadow-lg">
       {/* Top Banner Bar */}
@@ -50,15 +51,20 @@ export default function Header({ visitorStats }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap justify-center md:justify-end">
-          {/* Visitor Counter Badge */}
+          {/* Visitor Counter Clickable Badge */}
           {visitorStats && (
-            <div className="flex items-center gap-2 bg-emerald-900/80 border border-emerald-600/50 px-3.5 py-1.5 rounded-xl shadow-inner backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={onOpenVisitorLogs}
+              className="flex items-center gap-2 bg-emerald-900/80 hover:bg-emerald-800/90 border border-emerald-600/50 hover:border-emerald-400 px-3.5 py-1.5 rounded-xl shadow-inner backdrop-blur-sm transition cursor-pointer group text-left"
+              title="ক্লিক করে সকল ভিজিটরের বিস্তারিত ডিভাইস ও সময় তালিকা দেখুন 👆"
+            >
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
               </span>
               <div className="flex items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1 text-emerald-300 font-semibold">
+                <span className="inline-flex items-center gap-1 text-emerald-300 group-hover:text-white font-semibold">
                   <Eye className="w-3.5 h-3.5 text-emerald-400" />
                   ভিজিটর:
                 </span>
@@ -80,9 +86,13 @@ export default function Header({ visitorStats }: HeaderProps) {
                 >
                   আজ {visitorStats.todayVisits}
                 </span>
+                <span className="text-[10px] text-emerald-300 underline font-semibold ml-1 hidden sm:inline group-hover:text-amber-300">
+                  লগ দেখুন ➔
+                </span>
               </div>
-            </div>
+            </button>
           )}
+
 
           <div className="bg-emerald-900/60 border border-emerald-700/60 px-4 py-2 rounded-xl text-center md:text-right">
             <p className="text-xs text-emerald-200">সার্ভিস মোবাইল: <strong className="text-amber-300 font-mono font-bold text-sm">+880 1571-214406</strong></p>

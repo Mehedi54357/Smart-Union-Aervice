@@ -37,7 +37,11 @@ model VisitorLog {
   visitorId  String
   ip         String?
   userAgent  String?
+  device     String?
+  browser    String?
+  visitType  String?
   path       String?
   timestamp  DateTime @default(now())
 }
+
 

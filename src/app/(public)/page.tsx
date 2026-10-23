@@ -15,8 +15,10 @@ import {
   clearAllWorkHistory,
   recordVisitor,
   getVisitorStats,
+  getVisitorLogs,
+  clearVisitorLogs,
 } from '@/app/actions';
-import { RegistrationRecord, WorkHistoryLog, DashboardStats, VisitorStats } from '@/lib/types';
+import { RegistrationRecord, WorkHistoryLog, DashboardStats, VisitorStats, VisitorLogItem } from '@/lib/types';
 import {
   FileText,
   UserPlus,
@@ -38,6 +40,11 @@ import {
   Loader2,
   Eye,
   Users,
+  Smartphone,
+  Laptop,
+  Globe,
+  RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -56,6 +63,11 @@ export default function HomePage() {
 
   // Visitor Tracking State
   const [visitorStats, setVisitorStats] = useState<VisitorStats | null>(null);
+  const [isVisitorModalOpen, setIsVisitorModalOpen] = useState(false);
+  const [visitorLogs, setVisitorLogs] = useState<VisitorLogItem[]>([]);
+  const [isLoadingVisitorLogs, setIsLoadingVisitorLogs] = useState(false);
+  const [visitorLogsSearch, setVisitorLogsSearch] = useState('');
+
 
   // History Management & Batch Delete States
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
@@ -188,6 +200,38 @@ export default function HomePage() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  // Visitor Logs Modal Handlers
+  const fetchVisitorLogs = async () => {
+    setIsLoadingVisitorLogs(true);
+    try {
+      const res = await getVisitorLogs(150);
+      if (res.success && res.data) {
+        setVisitorLogs(res.data as any);
+      }
+    } catch (err) {
+      console.error('Failed to load visitor logs:', err);
+    } finally {
+      setIsLoadingVisitorLogs(false);
+    }
+  };
+
+  const handleOpenVisitorLogs = () => {
+    setIsVisitorModalOpen(true);
+    fetchVisitorLogs();
+  };
+
+  // Filtered visitor logs based on search query
+  const filteredVisitorLogs = visitorLogs.filter((log) => {
+    if (!visitorLogsSearch.trim()) return true;
+    const q = visitorLogsSearch.trim().toLowerCase();
+    const dev = log.device?.toLowerCase() || '';
+    const brw = log.browser?.toLowerCase() || '';
+    const typ = log.visitType?.toLowerCase() || '';
+    const vid = log.visitorId?.toLowerCase() || '';
+    return dev.includes(q) || brw.includes(q) || typ.includes(q) || vid.includes(q);
+  });
+
 
   // History Helper Handlers
   const toggleSelectHistory = (id: string) => {
@@ -615,7 +659,10 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
       {/* Official Header */}
-      <Header visitorStats={visitorStats || undefined} />
+      <Header
+        visitorStats={visitorStats || undefined}
+        onOpenVisitorLogs={handleOpenVisitorLogs}
+      />
 
 
       {/* Toast alert */}
@@ -1359,6 +1406,203 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      {/* Visitor Activity Details Modal */}
+      {isVisitorModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shadow-inner">
+                  <Eye className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900">ভিজিটর অ্যাক্টিভিটি বিবরণ</h3>
+                  <p className="text-xs text-slate-500">কে, কখন এবং কোন ডিভাইস দিয়ে অ্যাপে প্রবেশ করেছে তার বিবরণ</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchVisitorLogs}
+                  disabled={isLoadingVisitorLogs}
+                  className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition border border-slate-200"
+                  title="রিলোড করুন"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoadingVisitorLogs ? 'animate-spin text-emerald-600' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsVisitorModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-200/60 rounded-xl transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Stats Summary Bar inside Modal */}
+            <div className="px-5 py-3 bg-emerald-950 text-white flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-4 flex-wrap">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-emerald-300 font-semibold">সর্বমোট ভিজিট:</span>
+                  <strong className="font-mono bg-emerald-900 px-2 py-0.5 rounded text-white font-bold">
+                    {visitorStats?.totalVisits ?? visitorLogs.length} টি
+                  </strong>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-teal-300 font-semibold">ইউনিক ভিজিটর:</span>
+                  <strong className="font-mono bg-teal-900 px-2 py-0.5 rounded text-teal-200 font-bold">
+                    {visitorStats?.uniqueVisitors ?? 0} জন
+                  </strong>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-amber-300 font-semibold">আজকের ভিজিট:</span>
+                  <strong className="font-mono bg-amber-950 px-2 py-0.5 rounded text-amber-300 font-bold">
+                    {visitorStats?.todayVisits ?? 0} জন
+                  </strong>
+                </span>
+              </div>
+
+              <span className="text-[11px] text-emerald-200/80">
+                লগ সংখ্যা: {visitorLogs.length} টি
+              </span>
+            </div>
+
+            {/* Search Filter input */}
+            <div className="p-4 border-b border-slate-100 bg-white">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="ডিভাইস (যেমন: Android, Windows), ব্রাউজার বা আইডি খুঁজুন..."
+                  value={visitorLogsSearch}
+                  onChange={(e) => setVisitorLogsSearch(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+                {visitorLogsSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setVisitorLogsSearch('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Scrollable Logs List */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1 bg-slate-50/50">
+              {isLoadingVisitorLogs && visitorLogs.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 space-y-2">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600" />
+                  <p className="text-xs font-bold">ভিজিটর তথ্য লোড হচ্ছে...</p>
+                </div>
+              ) : filteredVisitorLogs.length > 0 ? (
+                filteredVisitorLogs.map((log) => {
+                  const isMobile = log.device?.includes('মোবাইল');
+                  const isTablet = log.device?.includes('ট্যাবলেট');
+
+                  return (
+                    <div
+                      key={log.id}
+                      className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-emerald-300 hover:shadow-md transition space-y-2.5"
+                    >
+                      {/* Top Row: Device icon, name & Visit Type Badge */}
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                              isMobile
+                                ? 'bg-blue-100 text-blue-700'
+                                : isTablet
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-purple-100 text-purple-700'
+                            }`}
+                          >
+                            {isMobile ? (
+                              <Smartphone className="w-5 h-5" />
+                            ) : (
+                              <Laptop className="w-5 h-5" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-extrabold text-slate-900 text-xs md:text-sm">
+                              📱 {log.device || 'ডিভাইস তথ্য উপলব্ধ নয়'}
+                            </p>
+                            <p className="text-[11px] text-slate-600 font-medium flex items-center gap-1 mt-0.5">
+                              <Globe className="w-3 h-3 text-slate-400" />
+                              ব্রাউজার: <strong className="text-slate-800">{log.browser || 'Google Chrome'}</strong>
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Visit Type Badge */}
+                        <div>
+                          {log.visitType === 'নতুন ভিজিটর' ? (
+                            <span className="bg-emerald-100 text-emerald-900 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-300/70 shadow-sm">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                              নতুন ভিজিটর
+                            </span>
+                          ) : (
+                            <span className="bg-blue-100 text-blue-900 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 border border-blue-300/70 shadow-sm">
+                              <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                              পুনরায় ভিজিট
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: Timestamp & ID */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-500">
+                        <p className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-emerald-700 flex-shrink-0" />
+                          <span>🕒 কখন ঢুকেছে:</span>
+                          <strong className="text-slate-800 font-medium">
+                            {new Date(log.timestamp).toLocaleString('bn-BD', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                            })}
+                          </strong>
+                        </p>
+
+                        <span className="font-mono text-[11px] bg-slate-100 px-2.5 py-0.5 rounded-md text-slate-600 border border-slate-200">
+                          🆔 #{log.visitorId.slice(-8)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-12 text-center text-slate-500 space-y-2">
+                  <Eye className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="text-slate-800 font-bold text-sm">কোনো ভিজিটর লগ পাওয়া যায়নি</p>
+                  <p className="text-xs text-slate-400">নতুন কেউ ওয়েবসাইটে ঢুকলে তার ডিভাইস ও সময় এখানে দেখা যাবে।</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsVisitorModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow transition"
+              >
+                বন্ধ করুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Footer */}
       <footer className="bg-slate-900 text-slate-400 py-4 border-t border-slate-800 text-xs text-center">

@@ -226,13 +226,66 @@ export async function clearAllWorkHistory() {
   }
 }
 
+function parseUserAgent(ua: string) {
+  let device = 'কম্পিউটার (Desktop)';
+  let browser = 'অন্যান্য (Web Browser)';
+
+  if (!ua) return { device, browser };
+
+  const isTablet = /ipad|tablet|(android(?!.*mobile))/i.test(ua);
+  const isMobile = /mobile|iphone|ipod|blackberry|iemobile|opera mini/i.test(ua) || (/android/i.test(ua) && !isTablet);
+
+  // Device & OS detection
+  if (/android/i.test(ua)) {
+    device = isTablet ? 'ট্যাবলেট (Android)' : 'মোবাইল (Android)';
+  } else if (/iphone/i.test(ua)) {
+    device = 'মোবাইল (iPhone iOS)';
+  } else if (/ipad/i.test(ua)) {
+    device = 'ট্যাবলেট (iPad iOS)';
+  } else if (/windows/i.test(ua)) {
+    device = 'কম্পিউটার (Windows)';
+  } else if (/macintosh|mac os x/i.test(ua)) {
+    device = 'কম্পিউটার (Mac OS)';
+  } else if (/linux/i.test(ua)) {
+    device = 'কম্পিউটার (Linux)';
+  } else if (isMobile) {
+    device = 'মোবাইল (Smartphone)';
+  }
+
+  // Browser detection
+  if (/edg/i.test(ua)) {
+    browser = 'Microsoft Edge';
+  } else if (/chrome|crios/i.test(ua) && !/opr|opera/i.test(ua)) {
+    browser = 'Google Chrome';
+  } else if (/safari/i.test(ua) && !/chrome|crios/i.test(ua)) {
+    browser = 'Apple Safari';
+  } else if (/firefox|fxios/i.test(ua)) {
+    browser = 'Mozilla Firefox';
+  } else if (/opr|opera/i.test(ua)) {
+    browser = 'Opera Browser';
+  } else if (/samsungbrowser/i.test(ua)) {
+    browser = 'Samsung Internet';
+  }
+
+  return { device, browser };
+}
+
 export async function recordVisitor(visitorId: string, userAgent?: string) {
   try {
     if (visitorId) {
+      const prevCount = await prisma.visitorLog.count({
+        where: { visitorId },
+      });
+      const visitType = prevCount === 0 ? 'নতুন ভিজিটর' : 'পুনরায় ভিজিট';
+      const { device, browser } = parseUserAgent(userAgent || '');
+
       await prisma.visitorLog.create({
         data: {
           visitorId,
           userAgent: userAgent || '',
+          device,
+          browser,
+          visitType,
           path: '/',
         },
       });
@@ -242,6 +295,30 @@ export async function recordVisitor(visitorId: string, userAgent?: string) {
   } catch (error) {
     console.error('Failed to record visitor:', error);
     return { success: false, data: { totalVisits: 0, uniqueVisitors: 0, todayVisits: 0 } };
+  }
+}
+
+export async function getVisitorLogs(limit = 100) {
+  try {
+    const logs = await prisma.visitorLog.findMany({
+      take: limit,
+      orderBy: { timestamp: 'desc' },
+    });
+    return { success: true, data: logs };
+  } catch (error) {
+    console.error('Failed to get visitor logs:', error);
+    return { success: false, data: [] };
+  }
+}
+
+export async function clearVisitorLogs() {
+  try {
+    await prisma.visitorLog.deleteMany({});
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to clear visitor logs:', error);
+    return { success: false, error: 'ভিজিটর লগ মুছতে ব্যর্থ হয়েছে।' };
   }
 }
 
@@ -285,4 +362,5 @@ export async function getVisitorStats() {
     };
   }
 }
+
 
